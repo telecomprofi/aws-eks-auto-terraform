@@ -1,4 +1,7 @@
 This stack creates VPC with NAT GW and insecure AWS EKS cluster in auto mode
+
+![Main branch CI workflow](https://github.com/telecomprofi/terraform-aws-modules/actions/workflows/terraform-ci.yml/badge.svg)
+
 ## Requirements
 
 | Name | Version |
@@ -38,3 +41,4 @@ This stack creates VPC with NAT GW and insecure AWS EKS cluster in auto mode
 ## Outputs
 
 No outputs.
+This repo has github actions enabled and checks for security issues with checkov and trivy before merge, as well as with SonarQube
