@@ -1,0 +1,155 @@
+name: Terraform CI/CD with Security & SonarQube
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+env:
+  TF_VERSION: v1.11.2
+  TF_AGENT: github-actions/terraform-1.11.2
+
+jobs:
+  terraform:
+    name: Validate, Lint, Scan, Analyze
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov
+        run: checkov -d . --quiet --soft-fail --output json > checkov_results.json
+
+      - name: Parse Checkov Results
+        id: checkov
+        run: |
+          crit_count=$(jq '[.results.failed_checks[] | select(.severity=="CRITICAL")] | length' checkov_results.json)
+          echo "critical_issues=$crit_count" >> $GITHUB_OUTPUT
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install wget -y
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.2_Linux-64bit.deb
+          sudo dpkg -i trivy_0.50.2_Linux-64bit.deb
+
+      - name: Run Trivy Config
+        run: trivy config . --exit-code 0 --severity CRITICAL,HIGH --format json > trivy_results.json
+
+      - name: Parse Trivy Results
+        id: trivy
+        run: |
+          crit_count=$(jq '[.Results[] | .Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy_results.json)
+          echo "critical_issues=$crit_count" >> $GITHUB_OUTPUT
+
+      - name: Fail if Critical Issues Found
+        if: steps.checkov.outputs.critical_issues != '0' || steps.trivy.outputs.critical_issues != '0'
+        run: |
+          echo "Critical issues found by Checkov or Trivy. Aborting."
+          exit 1
+
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+          unzip sonar-scanner.zip
+          export PATH="$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
+          sonar-scanner \
+            -Dsonar.projectKey=my-terraform-repo \
+            -Dsonar.sources=. \
+            -Dsonar.host.url=https://sonarqube.example.com \
+            -Dsonar.login=$SONAR_TOKEN \
+            -Dsonar.terraform.file.suffixes=tf,tfvars \
+            -Dsonar.verbose=true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: us-east-1
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=tfplan.binary
+
+      - name: Save Terraform Plan for Apply
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan.binary
+
+  wait_for_approval:
+    name: Wait for 2 Code Reviews
+    needs: terraform
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Require 2 Approvals
+        uses: hmarr/auto-approve-action@v3
+        with:
+          required-approvals: 2
+
+  apply:
+    name: Terraform Apply & Merge
+    needs: wait_for_approval
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: us-east-1
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: .
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan.binary
+
+      - name: Merge Pull Request to main
+        uses: devops-infra/action-pull-request@v0.5.4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pull_request_number: ${{ github.event.pull_request.number }}
+          merge_method: squash
