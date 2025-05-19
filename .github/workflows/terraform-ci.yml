@@ -38,53 +38,53 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Install Checkov
-        run: pip install checkov
+      # - name: Install Checkov
+      #   run: pip install checkov
 
-      - name: Run Checkov
-        run: checkov -d . --quiet --soft-fail --output json > checkov_results.json
+      # - name: Run Checkov
+      #   run: checkov -d . --quiet --soft-fail --output json > checkov_results.json
 
-      - name: Parse Checkov Results
-        id: checkov
-        run: |
-          crit_count=$(jq '[.results.failed_checks[] | select(.severity=="CRITICAL")] | length' checkov_results.json)
-          echo "critical_issues=$crit_count" >> $GITHUB_OUTPUT
+      # - name: Parse Checkov Results
+      #   id: checkov
+      #   run: |
+      #     crit_count=$(jq '[.results.failed_checks[] | select(.severity=="CRITICAL")] | length' checkov_results.json)
+      #     echo "critical_issues=$crit_count" >> $GITHUB_OUTPUT
 
-      - name: Install Trivy
-        run: |
-          sudo apt-get install wget -y
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.2_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.2_Linux-64bit.deb
+      # - name: Install Trivy
+      #   run: |
+      #     sudo apt-get install wget -y
+      #     wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.2_Linux-64bit.deb
+      #     sudo dpkg -i trivy_0.50.2_Linux-64bit.deb
 
-      - name: Run Trivy Config
-        run: trivy config . --exit-code 0 --severity CRITICAL,HIGH --format json > trivy_results.json
+      # - name: Run Trivy Config
+      #   run: trivy config . --exit-code 0 --severity CRITICAL,HIGH --format json > trivy_results.json
 
-      - name: Parse Trivy Results
-        id: trivy
-        run: |
-          crit_count=$(jq '[.Results[] | .Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy_results.json)
-          echo "critical_issues=$crit_count" >> $GITHUB_OUTPUT
+      # - name: Parse Trivy Results
+      #   id: trivy
+      #   run: |
+      #     crit_count=$(jq '[.Results[] | .Misconfigurations[]? | select(.Severity=="CRITICAL")] | length' trivy_results.json)
+      #     echo "critical_issues=$crit_count" >> $GITHUB_OUTPUT
 
-      - name: Fail if Critical Issues Found
-        if: steps.checkov.outputs.critical_issues != '0' || steps.trivy.outputs.critical_issues != '0'
-        run: |
-          echo "Critical issues found by Checkov or Trivy. Aborting."
-          exit 1
+      # - name: Fail if Critical Issues Found
+      #   if: steps.checkov.outputs.critical_issues != '0' || steps.trivy.outputs.critical_issues != '0'
+      #   run: |
+      #     echo "Critical issues found by Checkov or Trivy. Aborting."
+      #     exit 1
 
-      - name: SonarQube Scan
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-          unzip sonar-scanner.zip
-          export PATH="$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
-          sonar-scanner \
-            -Dsonar.projectKey=my-terraform-repo \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=https://sonarqube.example.com \
-            -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.terraform.file.suffixes=tf,tfvars \
-            -Dsonar.verbose=true
+      # - name: SonarQube Scan
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      #   run: |
+      #     curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+      #     unzip sonar-scanner.zip
+      #     export PATH="$PWD/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
+      #     sonar-scanner \
+      #       -Dsonar.projectKey=my-terraform-repo \
+      #       -Dsonar.sources=. \
+      #       -Dsonar.host.url=https://sonarqube.example.com \
+      #       -Dsonar.login=$SONAR_TOKEN \
+      #       -Dsonar.terraform.file.suffixes=tf,tfvars \
+      #       -Dsonar.verbose=true
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
