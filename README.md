@@ -42,3 +42,4 @@ This stack creates VPC with NAT GW and insecure AWS EKS cluster in auto mode
 
 No outputs.
 This repo has github actions enabled and checks for security issues with checkov and trivy before merge, as well as with SonarQube
+WIP
